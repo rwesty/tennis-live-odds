@@ -1,0 +1,94 @@
+Build a Tennis Live Odds Calculator web app. Here is a complete spec:
+
+---
+
+## PURPOSE
+A tool for sports bettors that takes pre-match vig-free (fair) odds for a tennis match and the current live score (pulled automatically from a URL), then calculates what the updated vig-free win probabilities and odds should be for each player.
+
+---
+
+## SCORE FETCHING
+
+### Input
+- User pastes a FlashScore USA match URL (e.g. https://www.flashscoreusa.com/player/gibson-talia/8GwNXON6/)
+- Note: the URL format may be a player page showing their current/recent match, or a direct match page
+
+### Fetching strategy
+FlashScore pages are JavaScript-rendered, so a direct fetch() will not return live score data.
+Use a CORS proxy to fetch the raw HTML, then parse it. Try these in order:
+1. https://api.allorigins.win/get?url=ENCODED_URL
+2. https://corsproxy.io/?ENCODED_URL
+
+Parse the returned HTML/text for:
+- Player 1 and Player 2 names
+- Match status: "Not Started", "Live", "Finished"
+- If Finished: display "Match is finished — [Winner] def. [Loser] [score]" and do not run odds calculator
+- If Not Started: display "Match has not started yet" and do not run odds calculator  
+- If Live: extract current set scores, current game score, current point score (0/15/30/40/Adv), and who is serving (look for a serve indicator dot/arrow in the HTML)
+
+### Fallback
+If scraping fails or the score cannot be parsed, show a clear error message and fall back to fully manual score entry so the calculator still works.
+
+### Polling
+Once a live match URL is loaded successfully, re-fetch and re-parse every 30 seconds to keep the score current. Show a "Last updated: X seconds ago" timestamp.
+
+---
+
+## CORE MATH / LOGIC
+
+### Pre-match input
+- Accept vig-free implied probability for Player 1 (e.g. 65%) — Player 2 is 1 minus that (35%)
+- These must sum to 100% (no vig)
+
+### Live score input (auto-filled from scrape, or manual)
+- Current set scores (sets won by each player)
+- Current game score within the active set (e.g. 4-3)
+- Current point score within the active game (0, 15, 30, 40, Adv — represented as 0/1/2/3/4)
+- Who is currently serving (Player 1 or Player 2)
+- Match format: Best of 3 or Best of 5
+- Whether a tiebreak is in progress and the tiebreak score
+- Toggle: Final set tiebreak (10-point match tiebreak) vs. full final set
+
+### In-play probability model
+Use a recursive/dynamic programming approach based on the iid point-win probability model:
+1. Back-solve from the pre-match implied probability to find the per-point win probability p for Player 1 when serving, and q when returning. If serve/return split is unknown, treat p as uniform. Use numerical binary search to find the value where P(Player 1 wins match | p) = pre-match probability.
+2. From the current live score, compute forward probability that Player 1 wins the match using:
+   - P(win game from current point score)
+   - P(win set from current game score, given p_game)
+   - P(win match from current set score, given p_set)
+3. Handle edge cases:
+   - Deuce/advantage in games
+   - Tiebreaks at 6-6 (standard 7-point, win by 2)
+   - Best of 3 and Best of 5 formats
+   - 10-point match tiebreak in final set
+
+### Output
+- Updated vig-free win probability for each player (%)
+- Updated fair American odds for each player (e.g. -180 / +160)
+- Updated fair decimal odds
+- Probability shift vs. pre-match (e.g. "Player 1 up +18.3% from pre-match")
+
+---
+
+## UI REQUIREMENTS
+- Clean single-page app (React preferred)
+- Top section: URL input field + "Load Match" button, match status display, last-updated timestamp
+- Middle section: pre-match probability input, match format selector, manual score override fields (auto-populated from scrape)
+- Bottom section: live output odds panel, updates instantly on any input change
+- Warn if score inputs are inconsistent
+
+---
+
+## TECH STACK
+- React, all math client-side, no backend
+- Use allorigins.win or corsproxy.io for CORS proxy fetching of FlashScore pages
+- Self-contained for easy Replit deployment
+
+---
+
+## EXAMPLE TO VERIFY MATH
+- Pre-match: Player 1 50% (p_point ≈ 0.50)
+- Score: Player 1 leads 1 set to 0, up 5-3 in set 2, 40-15 on serve
+- Expected: Player 1 win probability well above 80%
+
+Implement and verify the math engine first, then build the UI and scraper around it.
